@@ -24,6 +24,7 @@
 #include <vector>
 #include <set>
 #include <span>
+#include <stack>
 
 using namespace std;
 
@@ -48,7 +49,31 @@ struct TreeNode {
 
 class Solution {
 public:
-    vector<vector<int>> combinationSum(vector<int> const& candidates, int const target) {
+    using freqCombo_t = std::array<size_t, 41>;
+
+    struct freqComboHash_t {
+        std::size_t operator()(freqCombo_t const& value) const noexcept {
+            // https://algs4.cs.princeton.edu/34hash/#:~:text=The%20most%20commonly%20used%20method,between%200%20and%20M%2D1.
+            size_t result{};
+            for (auto const element : value) {
+                result = static_cast<size_t>(31 * result + element);
+            }
+            return result;
+        }
+    };
+
+    /*
+        Sort the candidates.
+        When the sum exceeds 'target' then there is no way that even more 
+        factors will produce a valid sum, so abandon remaining combinations
+        produced from the stem that produced the first invalid sum.
+        a
+        a b
+        a b c > sum!  Stop evaluating from c on, i.e. skip those.
+        a c
+        ...
+    */
+    vector<vector<int>> combinationSum(vector<int>& candidates, int const target) {
         vector<vector<int>> result{};
 
         if (!candidates.empty()) {
@@ -57,68 +82,61 @@ public:
                     result = {candidates};
                 }
             } else {
-                using combo_t = std::string;
-                std::unordered_set<combo_t> combos{};
+                std::sort(candidates.begin(), candidates.end());
 
-//                size_t candidateToIdx[41]; // Candidate value to its corresponding index in 'candidates'.
-//                for (size_t i = 0; candidates.size() > i; ++i) { candidateToIdx[candidates[i]] = i; }
+                std::unordered_set<freqCombo_t, freqComboHash_t> freqCombos{};
 
-                auto const minCandidate = *std::min_element(candidates.begin(), candidates.end());
-                auto const minCandidateIsValid = 2 <= minCandidate && 40 >= minCandidate;
-                assert(minCandidateIsValid);
-                if (minCandidateIsValid) {
-                    auto const maxFactorCount = target / minCandidate + (0 == target % minCandidate ? 0 : 1);
-                    std::vector<size_t> factors{}; //!< Indexes into candidates (not the candidates themselves).
+                std::deque<int> factorStack{};
+                int sum = 0;
+                size_t factor = 0;
+                while (true) {
+                    bool moveToNextParentFactor = true;
 
-                    while (true) {
-                        // Calculate the next permutation of factors (candidates).
-                        size_t rolloverCount = 0;
-                        for (auto& factor : factors) {
-                            factor = (factor + 1) % candidates.size();
-                            if (0 != factor) { break; }
-                            ++rolloverCount;
-                        }
-
-                        // Detect when all factor permutations have been processed.
-                        auto const fullRollover = factors.size() == rolloverCount;
-                        if (fullRollover) {
-                            // Stop processing when all possible factors have been processed.
-                            auto const allFactorPermutationsEvaluated = factors.size() + 1 >= maxFactorCount;
-                            if (allFactorPermutationsEvaluated) { break; }
-
-                            // Add the next factor.
-                            factors.push_back(0);
-                        }
-
-                        // Evaluate sum of all factors.
-                        std::remove_cv_t<decltype(target)> sum{};
-                        for (auto const factor : factors) {
-                            auto const candidate = candidates[factor];
-                            if (target - sum < candidate) { sum = 0; break; }
-                            sum = sum + candidate;
-                        }
-                        if (target == sum) {
-                            // Record result.
-                            combo_t result{};
-//
-//!\todo TODO: The following is insufficient because two results are 
-//             considered identical when the frequency of identical factors
-//             in each result are the same!  So there has to be some way to
-//             compare results, e.g. by sorting them _before_ recording them.
-//             Is there a faster solution than sorting?  Frequency counting?
-//
-                            std::transform(factors.begin(), factors.end(), std::back_inserter(result), [&](auto const factor){ return candidates[factor]; });
-std::sort(result.begin(), result.end());
-                            combos.insert(result);
+                    auto const sumWithinTargetRange = target - sum >= candidates[factor];
+                    if (sumWithinTargetRange) {
+                        auto const targetFound = target - sum == candidates[factor];
+                        if (targetFound) {
+                            // Create and record factor frequencies for this combination of factors.
+                            freqCombo_t freqCombo{};
+                            for (auto const stackedFactor : factorStack) { ++freqCombo[stackedFactor]; }
+                            ++freqCombo[factor];
+                            freqCombos.insert(freqCombo); // Records the same value only once.
+                        } else {
+                            factorStack.push_back(factor);
+                            sum += candidates[factor];
+                            factor = 0; // Restart sequence.
+                            moveToNextParentFactor = false;
                         }
                     }
+                    
+                    if (moveToNextParentFactor) {
+                        if (factorStack.empty()) {
+                            factor = (factor + 1) % candidates.size();
+                        } else {
+                            while (!factorStack.empty()) {
+                                factor = (factorStack.back() + 1) % candidates.size();
+                                sum -= candidates[factorStack.back()];
+                                factorStack.pop_back();
+                                if (0 != factor) { break; }
+                            }
+                        }
+                    }
+                    
+                    auto const allCombinationsVisited = 0 == factor && factorStack.empty();
+                    if (allCombinationsVisited) { break; }
                 }
 
-                // Convert results into final result and return it.
-                for (auto const& value : combos) {
-                    vector<int> asVec(value.size());
-                    std::copy(value.begin(), value.end(), asVec.begin());
-                    result.emplace_back(std::move(asVec));
+                // Convert factor combination frequencies into candidate combinations.
+                for (auto const& freqCombo : freqCombos) {
+                    vector<int> combo{};
+                    // For each factor in the combination:
+                    for (size_t factor = 0; freqCombo.size() > factor; ++factor) {
+                        // Emit "frequency count" candidates.
+                        for (auto count = freqCombo[factor]; count; --count) {
+                            combo.push_back(candidates[factor]);
+                        }
+                    }
+                    result.emplace_back(std::move(combo));
                 }
             }
         }
@@ -317,7 +335,7 @@ std::vector<int> btToLevelOrder(TreeNode* root) {
 TEST_CASE("Case 1")
 {
     cerr << "Case 1" << '\n';
-    auto const candidates = std::vector<int>{2,3,6,7};
+    auto candidates = std::vector<int>{2,3,6,7};
     auto const target = 7;
     auto const expected = [&]{
         auto result = std::vector<std::vector<int>>{
@@ -334,6 +352,155 @@ TEST_CASE("Case 1")
             auto result = Solution{}.combinationSum(candidates, target);
             for (auto& r : result) { std::sort(r.begin(), r.end()); }
             std::sort(result.begin(), result.end());
+            return result;
+        }();
+        CHECK(result == expected);
+        cerr << "Elapsed time: " << elapsed_time_t{start} << '\n';
+    }
+    cerr << '\n';
+}
+
+TEST_CASE("Case 2")
+{
+    cerr << "Case 2" << '\n';
+    auto candidates = std::vector<int>{2,3,5};
+    auto const target = 8;
+    auto const expected = [&]{
+        auto result = std::vector<std::vector<int>>{
+            {2,2,2,2}
+            , {2,3,3}
+            , {3,5}
+        };
+        for (auto& r : result) { std::sort(r.begin(), r.end()); }
+        std::sort(result.begin(), result.end());
+        return result;
+    }();
+    { // New scope.
+        auto const start = std::chrono::steady_clock::now();
+        auto const result = [&]{
+            auto result = Solution{}.combinationSum(candidates, target);
+            for (auto& r : result) { std::sort(r.begin(), r.end()); }
+            std::sort(result.begin(), result.end());
+            return result;
+        }();
+        CHECK(result == expected);
+        cerr << "Elapsed time: " << elapsed_time_t{start} << '\n';
+    }
+    cerr << '\n';
+}
+
+TEST_CASE("Case 3")
+{
+    cerr << "Case 3" << '\n';
+    auto candidates = std::vector<int>{2};
+    auto const target = 1;
+    auto const expected = [&]{
+        auto result = std::vector<std::vector<int>>{};
+        for (auto& r : result) { std::sort(r.begin(), r.end()); }
+        std::sort(result.begin(), result.end());
+        return result;
+    }();
+    { // New scope.
+        auto const start = std::chrono::steady_clock::now();
+        auto const result = [&]{
+            auto result = Solution{}.combinationSum(candidates, target);
+            for (auto& r : result) { std::sort(r.begin(), r.end()); }
+            std::sort(result.begin(), result.end());
+            return result;
+        }();
+        CHECK(result == expected);
+        cerr << "Elapsed time: " << elapsed_time_t{start} << '\n';
+    }
+    cerr << '\n';
+}
+
+#include <iostream>
+
+TEST_CASE("Case 4")
+{
+    cerr << "Case 4" << '\n';
+    auto candidates = std::vector<int>{4,8,11,10,9,3,12,7,6};
+    auto const target = 25;
+    auto const expected = [&]{
+        auto result = std::vector<std::vector<int>>{
+            {3,3,3,3,3,3,3,4}
+            , {3,3,3,3,3,3,7}
+            , {3,3,3,3,3,4,6}
+            , {3,3,3,3,3,10}
+            , {3,3,3,3,4,9}
+            , {3,3,3,3,6,7}
+            , {3,3,3,4,4,4,4}
+            , {3,3,3,4,4,8}
+            , {3,3,3,4,6,6}
+            , {3,3,3,4,12}
+            , {3,3,3,6,10}
+            , {3,3,3,7,9}
+            , {3,3,3,8,8}
+            , {3,3,4,4,4,7}
+            , {3,3,4,4,11}
+            , {3,3,4,6,9}
+            , {3,3,4,7,8}
+            , {3,3,6,6,7}
+            , {3,3,7,12}
+            , {3,3,8,11}
+            , {3,3,9,10}
+            , {3,4,4,4,4,6}
+            , {3,4,4,4,10}
+            , {3,4,4,6,8}
+            , {3,4,4,7,7}
+            , {3,4,6,6,6}
+            , {3,4,6,12}
+            , {3,4,7,11}
+            , {3,4,8,10}
+            , {3,4,9,9}
+            , {3,6,6,10}
+            , {3,6,7,9}
+            , {3,6,8,8}
+            , {3,7,7,8}
+            , {3,10,12}
+            , {3,11,11}
+            , {4,4,4,4,9}
+            , {4,4,4,6,7}
+            , {4,4,6,11}
+            , {4,4,7,10}
+            , {4,4,8,9}
+            , {4,6,6,9}
+            , {4,6,7,8}
+            , {4,7,7,7}
+            , {4,9,12}
+            , {4,10,11}
+            , {6,6,6,7}
+            , {6,7,12}
+            , {6,8,11}
+            , {6,9,10}
+            , {7,7,11}
+            , {7,8,10}
+            , {7,9,9}
+            , {8,8,9}
+        };
+        for (auto& r : result) { std::sort(r.begin(), r.end()); }
+        std::sort(result.begin(), result.end());
+        return result;
+    }();
+    { // New scope.
+        auto const start = std::chrono::steady_clock::now();
+        auto const result = [&]{
+            auto result = Solution{}.combinationSum(candidates, target);
+            for (auto& r : result) { std::sort(r.begin(), r.end()); }
+            std::sort(result.begin(), result.end());
+#if 0
+for (auto const& a : result) {
+    cout << '{';
+    bool first = true;
+    for (auto const& b : a) {
+        if (first) { first = false; }
+        else { cout << ','; }
+        cout << b;
+    }
+    cout << '}' << '\n';
+}
+cout << std::flush;
+#endif // #if 0
             return result;
         }();
         CHECK(result == expected);
