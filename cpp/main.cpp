@@ -73,7 +73,7 @@ public:
         a c
         ...
     */
-    vector<vector<int>> combinationSum(vector<int>& candidates, int const target) {
+    vector<vector<int>> combinationSum_bruteForce_Overcount(vector<int>& candidates, int const target) {
         vector<vector<int>> result{};
 
         if (!candidates.empty()) {
@@ -143,6 +143,141 @@ public:
 
         return result;
     }
+
+    /*
+        This algorithm requires that the candidates be sorted,
+        which can be an optimization for large data sets.
+    */
+    int combinationSumRecursive_SecondAttempt(
+        vector<int>& candidates
+        , int const target
+        , vector<vector<int>>& result
+        , size_t candidatesIdx
+        , vector<int>& combo
+        , int sum
+    ) {
+        while (candidates.size() > candidatesIdx && target - sum >= candidates[candidatesIdx]) {
+            if (target - sum == candidates[candidatesIdx]) {
+                combo.push_back(candidates[candidatesIdx]);
+                result.push_back(combo);
+                combo.pop_back();
+            } else {
+                combo.push_back(candidates[candidatesIdx]);
+                sum += candidates[candidatesIdx];
+                sum = combinationSumRecursive_SecondAttempt(candidates, target, result, candidatesIdx, combo, sum);
+                sum -= combo.back();
+                combo.pop_back();
+            }
+            ++candidatesIdx;
+        }
+        return sum;
+    }
+
+    vector<vector<int>> combinationSum_SecondAttempt(vector<int>& candidates, int const target) {
+        std::sort(candidates.begin(), candidates.end());
+        vector<vector<int>> result{};
+        vector<int> combo{};
+        combinationSumRecursive_SecondAttempt(candidates, target, result, 0, combo, 0);
+        return result;
+    }
+
+    /*
+        This algorithm does NOT require that the candidates be sorted,
+        which simplifies the implementation a bit.
+    */
+    void combinationSum_ThirdAttempt_Visitor(
+        vector<int> const& candidates
+        , size_t candidatesIdx
+        , int const target
+        , int sum
+        , vector<int> combo
+        , vector<vector<int>>& result
+    ) {
+        if (target == sum) {
+            result.push_back(combo);
+        } else {
+            // Start iterating the decision tree "children" of this "node"
+            // at the same child index that this child is in its parent.
+            // This prevents reproduction of duplicate _COMBINATIONS_,
+            // i.e. sets that have the same values - just in a different order.
+            for (auto idx = candidatesIdx; candidates.size() > idx; ++idx) {
+                auto const candidate = candidates[idx];
+                if (target - sum >= candidate) {
+                    combo.push_back(candidate);
+                    combinationSum_ThirdAttempt_Visitor(
+                        candidates
+                        , idx
+                        , target
+                        , sum + candidate
+                        , combo
+                        , result
+                    );
+                    combo.pop_back();
+                }
+            }
+        }
+    }
+
+    vector<vector<int>> combinationSum_ThirdAttempt(vector<int> const& candidates, int const target) {
+        vector<vector<int>> result{};
+        vector<int> treeBranch{};
+        combinationSum_ThirdAttempt_Visitor(candidates, 0, target, 0, treeBranch, result);
+        return result;
+    }
+
+    /*
+        This type exists to maintain state between recursive function calls,
+        which eliminates several recursive function call arguments and 
+        improves runtime performance.
+    */
+    struct CombinationSum {
+        CombinationSum(vector<int> const& candidates, int const target)
+            : candidates{candidates}, target{target} {}
+
+        /*
+            This algorithm does NOT require that the candidates be sorted,
+            which simplifies the implementation a bit.
+        */
+        void visit(
+            size_t candidatesIdx = 0
+            , int sum = 0
+        ) {
+            if (target == sum) {
+                result.push_back(combo);
+            } else {
+                // Start iterating the decision tree "children" of this "node"
+                // at the same child index that this child is in its parent.
+                // This prevents reproduction of duplicate _COMBINATIONS_,
+                // i.e. sets that have the same values - just in a different order.
+                for (auto idx = candidatesIdx; candidates.size() > idx; ++idx) {
+                    auto const candidate = candidates[idx];
+                    if (target - sum >= candidate) {
+                        combo.push_back(candidate);
+                        visit(idx, sum + candidate);
+                        combo.pop_back();
+                    }
+                }
+            }
+        }
+
+        vector<vector<int>> operator()() {
+            visit();
+            return std::move(result);
+        }
+
+        vector<int> const& candidates;
+        int const target;
+        vector<vector<int>> result;
+        vector<int> combo{};
+    };
+
+    vector<vector<int>> combinationSum(vector<int>& candidates, int const target) {
+//        return combinationSum_bruteForce_Overcount(candidates, target);
+// 'combinationSum_SecondAttempt()' to be the fastest.
+        return combinationSum_SecondAttempt(candidates, target);
+//        return combinationSum_ThirdAttempt(candidates, target);
+//        return CombinationSum{candidates, target}();
+    }
 };
 
 // [----------------(120 columns)---------------> Module Code Delimiter <---------------(120 columns)----------------]
@@ -164,7 +299,7 @@ operator<<(std::ostream& os, elapsed_time_t const& et)
     auto const elapsed_time = et.end - et.start;
     os << std::chrono::duration_cast<std::chrono::microseconds>(elapsed_time).count()
        << '.' << (std::chrono::duration_cast<std::chrono::microseconds>(elapsed_time).count() % 1000)
-       << " ms";
+       << " microseconds";
     return os;
 }
 
