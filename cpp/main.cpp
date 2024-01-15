@@ -147,8 +147,59 @@ public:
     /*
         This algorithm requires that the candidates be sorted,
         which can be an optimization for large data sets.
+
+        ((( Example 1 )))
+
+        candidates = [2,3,6,7]
+        target = 7
+        WARNING: Input must be sorted for this method to work!
+
+            *           *
+        2222222|3333|66|7
+        222233  336  6
+        223 3   3
+        2
+
+        Note that this approach skips:
+        2,2,2,3..7; 2,2,3,2..7; 2,2,6..7; 2,3,2..7; etc.
+
+        ((( Example 2 )))
+
+        candidates = [2,3,5]
+        target = 8
+        WARNING: Input must be sorted for this method to work!
+
+        *    *      *
+        22222222222|3333|55
+        2222223355  335  5
+        22335 3 5   3
+        2 3
+
+        Time = O((t/m)*(k/2)) => O(tk/m)
+               t = target value
+               m = minimum candidate value
+               k = number of candidates
+               However, many candidate values will be skipped, on average, 
+               because the candidates are sorted and impossible combinations
+               are skipped.  I don't know the probability of subsequent
+               candidates being skipped so I can't work out the average
+               performance of this algo.  This behavior can be illustrated
+               by graphing the call tree and omitting the values that are
+               skipped:
+
+        2...
+        |
+        2-----------------------------------3-----------------------------------6...
+        |--------+--------+--------+        +--------+--------+--------+        +...
+        2        3        6        7        -        -        -        -        -...
+        |+|+|+|  |+|+|+|  |+|+|+|  |+|+|+|  |+|+|+|  |+|+|+|  |+|+|+|  |+|+|+|  |...
+        2 3 6 7  - - - -  - - - -  - - - -  - - - -  - - - -  - - - -  - - - -  -...
+
+        Space = O(t/m)  [maximum call depth]
+               t = target value
+               m = minimum candidate value
     */
-    int combinationSumRecursive_SecondAttempt(
+    void combinationSumRecursive_SecondAttempt(
         vector<int>& candidates
         , int const target
         , vector<vector<int>>& result
@@ -163,18 +214,42 @@ public:
                 combo.pop_back();
             } else {
                 combo.push_back(candidates[candidatesIdx]);
-                sum += candidates[candidatesIdx];
-                sum = combinationSumRecursive_SecondAttempt(candidates, target, result, candidatesIdx, combo, sum);
-                sum -= combo.back();
+                combinationSumRecursive_SecondAttempt(
+                    candidates
+                    , target
+                    , result
+                    , candidatesIdx
+                    , combo
+                    , sum + candidates[candidatesIdx]
+                );
                 combo.pop_back();
             }
             ++candidatesIdx;
         }
-        return sum;
     }
 
     vector<vector<int>> combinationSum_SecondAttempt(vector<int>& candidates, int const target) {
-        std::sort(candidates.begin(), candidates.end());
+        // Bucket sort candidates (they're just integers with a small range).
+        if (candidates.size() > 1) {
+            int freqs[42] = { 0 }; // Problem says 38, but I don't trust it.
+            int minCandidate = (std::numeric_limits<int>::max)();
+            int maxCandidate = (std::numeric_limits<int>::min)();
+            for (auto const candidate : candidates) {
+                assert(0 <= candidate && std::size(freqs) > candidate);
+                minCandidate = (std::min)(minCandidate, candidate);
+                maxCandidate = (std::max)(maxCandidate, candidate);
+                ++freqs[candidate];
+            }
+            size_t candidatesIdx = 0;
+            for (auto candidate = minCandidate; maxCandidate >= candidate; ++candidate) {
+                for (auto candidateCnt = freqs[candidate]; 0 < candidateCnt; --candidateCnt) {
+                    assert(candidates.size() > candidatesIdx);
+                    candidates[candidatesIdx++] = candidate;
+                }
+            }
+            assert(candidates.size() == candidatesIdx);
+        }
+        
         vector<vector<int>> result{};
         vector<int> combo{};
         combinationSumRecursive_SecondAttempt(candidates, target, result, 0, combo, 0);
@@ -230,8 +305,8 @@ public:
         which eliminates several recursive function call arguments and 
         improves runtime performance.
     */
-    struct CombinationSum {
-        CombinationSum(vector<int> const& candidates, int const target)
+    struct CombinationSum_ThirdAttempt {
+        CombinationSum_ThirdAttempt(vector<int> const& candidates, int const target)
             : candidates{candidates}, target{target} {}
 
         /*
@@ -273,10 +348,10 @@ public:
 
     vector<vector<int>> combinationSum(vector<int>& candidates, int const target) {
 //        return combinationSum_bruteForce_Overcount(candidates, target);
-// 'combinationSum_SecondAttempt()' to be the fastest.
+// 'combinationSum_SecondAttempt()' appears to be the fastest.
         return combinationSum_SecondAttempt(candidates, target);
 //        return combinationSum_ThirdAttempt(candidates, target);
-//        return CombinationSum{candidates, target}();
+//        return CombinationSum_ThirdAttempt{candidates, target}();
     }
 };
 
